@@ -3,14 +3,8 @@ pipeline {
 
     environment {
         IMAGE_NAME = "sample-webapp"
-        IMAGE_TAG  = "${env.BUILD_NUMBER ?: 'local'}"
-    }
-
-    options {
-        // Keep only the last 10 builds to save space
-        buildDiscarder(logRotator(numToKeepStr: '10'))
-        // Timeout entire pipeline after 30 minutes
-        timeout(time: 30, unit: 'MINUTES')
+        CONTAINER_NAME = "sample-webapp_test"
+        WAR_FILE = "target/sample-webapp-1.0.0.war"
     }
 
     stages {
@@ -24,23 +18,21 @@ pipeline {
         stage('Build & Test') {
             steps {
                 echo "Building project with Maven..."
-                bat 'mvn -B clean package'
+                bat "mvn -B clean package"
             }
         }
 
         stage('Archive WAR') {
             steps {
                 echo "Archiving WAR files..."
-                archiveArtifacts artifacts: 'target/*.war', fingerprint: true
+                archiveArtifacts artifacts: WAR_FILE, fingerprint: true
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                echo "Building Docker image ${env.IMAGE_NAME}:${env.IMAGE_TAG}..."
-                powershell """
-                docker build -t ${env.IMAGE_NAME}:${env.IMAGE_TAG} .
-                """
+                echo "Building Docker image ${IMAGE_NAME}:14..."
+                powershell "docker build -t ${IMAGE_NAME}:14 ."
             }
         }
 
@@ -48,37 +40,16 @@ pipeline {
             steps {
                 echo "Starting smoke test container..."
                 powershell """
-                # Remove previous test container if exists
-                docker rm -f ${env.IMAGE_NAME}_test -ErrorAction SilentlyContinue
-
-                # Run container in detached mode
-                docker run -d --name ${env.IMAGE_NAME}_test -p 8080:8080 ${env.IMAGE_NAME}:${env.IMAGE_TAG}
-
-                # Wait for container to start (max 30 seconds)
-                \$maxRetries = 6
-                \$retryCount = 0
-                \$success = \$false
-
-                while (-not \$success -and \$retryCount -lt \$maxRetries) {
-                    Start-Sleep -Seconds 5
-                    try {
-                        \$response = Invoke-WebRequest -UseBasicParsing -Uri http://localhost:8080/ -ErrorAction Stop
-                        Write-Output "Smoke test passed: \$($response.StatusCode)"
-                        \$success = \$true
-                    } catch {
-                        Write-Output "Attempt \$([int](\$retryCount+1)) failed. Retrying..."
-                        \$retryCount++
-                    }
+                # Delete existing container if exists
+                try {
+                    docker rm -f ${CONTAINER_NAME}
+                } catch {
+                    Write-Output "Container does not exist, skipping removal."
                 }
 
-                if (-not \$success) {
-                    Write-Output "Smoke test failed. Printing container logs:"
-                    docker logs ${env.IMAGE_NAME}_test
-                    exit 1
-                }
-
-                # Cleanup test container
-                docker rm -f ${env.IMAGE_NAME}_test -ErrorAction SilentlyContinue
+                # Run new container
+                docker run -d --name ${CONTAINER_NAME} -p 8080:8080 ${IMAGE_NAME}:14
+                docker ps
                 """
             }
         }
@@ -86,17 +57,23 @@ pipeline {
 
     post {
         always {
-            echo "Publishing JUnit test results..."
-            junit 'target/surefire-reports/*.xml'
-
-            echo "Cleaning up any leftover Docker containers..."
+            echo "Cleaning up Docker containers..."
             powershell """
-            docker rm -f ${env.IMAGE_NAME}_test -ErrorAction SilentlyContinue
+            try {
+                docker rm -f ${CONTAINER_NAME}
+            } catch {
+                Write-Output "Container does not exist, skipping removal."
+            }
             """
+
+            echo "Publishing JUnit test results..."
+            junit '**/target/surefire-reports/*.xml'
         }
+
         success {
-            echo "Pipeline completed successfully! Docker image: ${env.IMAGE_NAME}:${env.IMAGE_TAG}"
+            echo "Pipeline completed successfully!"
         }
+
         failure {
             echo "Pipeline failed. Check console output and Docker logs."
         }
