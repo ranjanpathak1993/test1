@@ -12,9 +12,13 @@ pipeline {
       }
     }
 
-    stage('Build & Test') {
-      steps {
-        bat 'mvn -B clean package'
+    stage('Build Docker Image') {
+    steps {
+        powershell """
+        docker build --load -t sample-webapp:latest .
+        """
+    }
+}
       }
       post {
         always {
