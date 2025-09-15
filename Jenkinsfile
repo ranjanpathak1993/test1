@@ -39,8 +39,8 @@ pipeline {
                 docker run -d --name ${env:IMAGE_NAME}_test -p 8080:8080 ${env:IMAGE_NAME}:${env:IMAGE_TAG}
                 Start-Sleep -Seconds 5
                 try {
-                    \$r = Invoke-WebRequest -UseBasicParsing -Uri http://localhost:8080/ -ErrorAction Stop
-                    Write-Output "Smoke test success: \$($r.StatusCode)"
+                    \$response = Invoke-WebRequest -UseBasicParsing -Uri http://localhost:8080/ -ErrorAction Stop
+                    Write-Output "Smoke test passed: \$($response.StatusCode)"
                 } catch {
                     docker logs ${env:IMAGE_NAME}_test
                     exit 1
