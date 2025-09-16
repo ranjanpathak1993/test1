@@ -1,0 +1,7 @@
+version: '3.8'
+services:
+  selenium-demo:
+    build: .
+    container_name: selenium-demo
+    ports:
+      - '8081:8081'
